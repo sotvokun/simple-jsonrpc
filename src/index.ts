@@ -61,19 +61,17 @@ export interface RequestContext {
   request: RequestInit;
 }
 
-export interface ResponseContext<TResult, TError> {
-  rpcResponse: RPCResponse<TResult, TError> | RPCError<TError>;
+export interface ResponseContext<TResult> {
+  rpcResponse: RPCResponse<TResult>;
   response: Response;
-  ok: boolean;
   data?: TResult;
-  error?: RPCError<TError>;
 }
 
 export interface RPCFetchOptions {
   url: string | URL;
   options?: {
     beforeFetch?: (request: RequestContext) => RequestContext,
-    onResponse?: <TResult, TError>(response: ResponseContext<TResult, TError>) => ResponseContext<TResult, TError>,
+    onResponse?: <TResult>(response: ResponseContext<TResult>) => ResponseContext<TResult>,
     onError?: (error: Error) => Error,
     idGenerator?: false | (() => RPCId),
   };
@@ -109,7 +107,7 @@ export function createFetch(options: RPCFetchOptions, fetch_: typeof fetch = fet
     return params;
   }
 
-  const request = <TResult, TError>(method: string, ...params: any[]) => {
+  const request = <TResult = any, TError = any>(method: string, ...params: any[]) => {
     const id = options.options?.idGenerator
       ? options.options.idGenerator()
       : null;
@@ -125,7 +123,7 @@ export function createFetch(options: RPCFetchOptions, fetch_: typeof fetch = fet
       url: new URL(options.url.toString()),
       request: preRequestInit,
     });
-    return new Promise<ResponseContext<TResult, TError>>(async (resolve, reject) => {
+    return new Promise<ResponseContext<TResult>>(async (resolve, reject) => {
       try {
         const response = await fetch_(url, request)
         if (!response.ok) {
@@ -136,16 +134,18 @@ export function createFetch(options: RPCFetchOptions, fetch_: typeof fetch = fet
         const result = {
           rpcResponse,
           response,
-        } as ResponseContext<TResult, TError>;
+        } as ResponseContext<TResult>;
         if (rpcResponse.error) {
-          result.ok = false;
-          result.error = rpcResponse.error;
+          throw new RPCError(
+            rpcResponse.error.code,
+            rpcResponse.error.message,
+            rpcResponse.error.data
+          );
         } else {
-          result.ok = true;
           result.data = rpcResponse.result;
         }
         resolve(
-          (options.options?.onResponse ?? ((a: ResponseContext<TResult, TError>) => a))(result)
+          (options.options?.onResponse ?? ((a: ResponseContext<TResult>) => a))(result)
         );
       } catch (e) {
         reject(
